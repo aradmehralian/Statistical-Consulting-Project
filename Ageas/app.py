@@ -1,4 +1,5 @@
 import streamlit as st
+import plotly.graph_objects as go
 import pandas as pd
 import statsmodels.api as sm
 import joblib
@@ -13,10 +14,17 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
+
 # the models created in the model.ipynb file
-model_freq = sm.load(str(BASE_DIR / "models" / "model_freq_v2.pkl"))
-model_sev = sm.load(str(BASE_DIR / "models" / "model_sev_v3.pkl"))
-discretizer = joblib.load(str(BASE_DIR / "models" / "discretizer.pkl"))
+@st.cache_resource
+def load_models():
+    m_freq = sm.load(str(BASE_DIR / "models" / "model_freq_v2.pkl"))
+    m_sev = sm.load(str(BASE_DIR / "models" / "model_sev_v3.pkl"))
+    m_disc = joblib.load(str(BASE_DIR / "models" / "discretizer.pkl"))
+    return m_freq, m_sev, m_disc
+
+
+model_freq, model_sev, discretizer = load_models()
 
 
 risk_labels = {0.0: "Low Risk", 1.0: "Medium Risk", 2.0: "High Risk"}
@@ -71,7 +79,7 @@ car_cat = st.sidebar.selectbox("Car Category", ["Small", "Medium", "Large"])
 car_val = st.sidebar.number_input(
     "Car Value (€)", min_value=500, max_value=50_000, value=10_000, step=1000
 )
-n_years = st.sidebar.slider("Years as Customer", 0, 10, 0)
+n_years = st.sidebar.slider("Years as Customer", 0, 15, 0)
 
 run = st.sidebar.button("Score Customer")
 
@@ -102,8 +110,19 @@ if run:
     risk_bin = discretizer.transform(
         pd.DataFrame([[expected_cost]], columns=["Expected_Cost"])
     )[0][0]
+
     risk_tier = risk_labels[risk_bin]
     profile = profiles[risk_bin]
+
+    if risk_tier == "Low Risk":
+        score = 25
+        color = "#34d399"
+    elif risk_tier == "Medium Risk":
+        score = 50
+        color = "#fbbf24"
+    else:
+        score = 75
+        color = "#f87171"
 
     # predicted metrics
     st.subheader("Predicted Cost Breakdown")
@@ -114,12 +133,48 @@ if run:
 
     st.divider()
     st.markdown("### Classification")
-    if "High" in risk_tier:
-        st.error(f"{risk_tier}")
-    elif "Medium" in risk_tier:
-        st.warning(f"{risk_tier}")
-    else:
-        st.success(f"{risk_tier}")
+
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge",
+            value=score,
+            domain={"x": [0, 1], "y": [0, 1]},
+            gauge={
+                "axis": {
+                    "range": [None, 100],
+                    "visible": False,
+                },
+                "bar": {"color": color, "thickness": 1},
+                "bgcolor": "rgba(0,0,0,0)",
+                "borderwidth": 2,
+                "bordercolor": "#1e2330",
+                "steps": [
+                    {"range": [0, 33], "color": "rgba(52, 211, 153, 0.1)"},
+                    {"range": [33, 66], "color": "rgba(251, 191, 36, 0.1)"},
+                    {"range": [66, 100], "color": "rgba(248, 113, 113, 0.1)"},
+                ],
+            },
+        )
+    )
+
+    fig.add_annotation(
+        x=0.5,
+        y=0.2,
+        text=f"<b>{risk_tier.upper()}</b>",
+        showarrow=False,
+        font=dict(size=24, color=color, family="Arial Black"),
+        align="center",
+    )
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=300,
+        margin=dict(l=20, r=20, t=20, b=20),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
     st.divider()
 
     st.markdown(f"### {profile["icon"]} {profile["title"]}")
