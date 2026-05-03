@@ -27,7 +27,19 @@ def load_models():
 model_freq, model_sev, discretizer = load_models()
 
 
-risk_labels = {0.0: "Low Risk", 1.0: "Medium Risk", 2.0: "High Risk"}
+@st.cache_resource
+def load_risk_data():
+    return pd.read_csv(str(BASE_DIR / "data" / "risk_summary.csv"))
+
+
+risk_summary = load_risk_data()
+
+risk_labels = {
+    0.0: "Low Risk",
+    1.0: "Medium Risk",
+    2.0: "High Risk",
+    3.0: "Extreme Risk",
+}
 
 profiles = {
     0.0: {
@@ -57,6 +69,22 @@ profiles = {
         "car": "Small Car",
         "icon": "🌆",
     },
+    3.0: {
+        "title": "The Metropolitan Novice",
+        "gender": "Male",
+        "age": "~22",
+        "density": "249",
+        "status": "Unemployed",
+        "car": "Small Car",
+        "icon": "🏎️",
+    },
+}
+
+risk_visuals = {
+    "Low Risk": {"score": 30, "color": "#34d399"},
+    "Medium Risk": {"score": 60, "color": "#fbbf24"},
+    "High Risk": {"score": 90, "color": "#f87171"},
+    "Extreme Risk": {"score": 100, "color": "#7f1d1d"},
 }
 
 
@@ -114,26 +142,29 @@ if run:
     risk_tier = risk_labels[risk_bin]
     profile = profiles[risk_bin]
 
-    if risk_tier == "Low Risk":
-        score = 25
-        color = "#34d399"
-    elif risk_tier == "Medium Risk":
-        score = 50
-        color = "#fbbf24"
+    visuals = risk_visuals.get(risk_tier, {"score": 0, "color": "#cccccc"})
+    score = visuals["score"]
+    color = visuals["color"]
+
+    tier_stats = risk_summary[risk_summary["risk_flag"] == risk_tier]
+    if not tier_stats.empty:
+        tier_min = tier_stats["minimum_cost"].values[0]
+        tier_max = tier_stats["maximum_cost"].values[0]
+        tier_median = tier_stats["median_cost"].values[0]
     else:
-        score = 75
-        color = "#f87171"
+        tier_min = tier_max = tier_median = 0.0
 
     # predicted metrics
-    st.subheader("Predicted Cost Breakdown")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Claim Rate (claims/year)", f"{freq:.4f}")
-    col2.metric("Severity per Claim (€)", f"€{sev:,.0f}")
-    col3.metric("Expected Cost (€)", f"€{expected_cost:,.0f}")
+    st.subheader("Financial Risk Breakdown")
+
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Claim Frequency", f"{freq:.4f}", help="Expected claims per year")
+    m2.metric("Claim Severity", f"€{sev:,.0f}", help="Average cost per claim")
+    m3.metric("Expected Annual Cost", f"€{expected_cost:,.2f}")
 
     st.divider()
-    st.markdown("### Classification")
 
+    st.markdown("### Classification")
     fig = go.Figure(
         go.Indicator(
             mode="gauge",
@@ -149,9 +180,10 @@ if run:
                 "borderwidth": 2,
                 "bordercolor": "#1e2330",
                 "steps": [
-                    {"range": [0, 33], "color": "rgba(52, 211, 153, 0.1)"},
-                    {"range": [33, 66], "color": "rgba(251, 191, 36, 0.1)"},
-                    {"range": [66, 100], "color": "rgba(248, 113, 113, 0.1)"},
+                    {"range": [0, 30], "color": "rgba(52, 211, 153, 0.1)"},
+                    {"range": [30, 60], "color": "rgba(251, 191, 36, 0.1)"},
+                    {"range": [60, 90], "color": "rgba(248, 113, 113, 0.1)"},
+                    {"range": [90, 100], "color": "rgba(127, 29, 29, 0.1)"},
                 ],
             },
         )
@@ -175,9 +207,18 @@ if run:
 
     st.plotly_chart(fig, use_container_width=True)
 
+    with st.container(border=True):
+        st.markdown(f"#### {risk_tier} Group Benchmarks")
+        st.caption("Historical performance for this specific risk segment")
+
+        b1, b2, b3 = st.columns(3)
+        b1.metric("Minimum Cost", f"€{tier_min:,.2f}")
+        b2.metric("Median Cost", f"€{tier_median:,.2f}")
+        b3.metric("Maximum Cost", f"€{tier_max:,.2f}")
+
     st.divider()
 
-    st.markdown(f"### {profile["icon"]} {profile["title"]}")
+    st.markdown(f"### {profile["title"]}")
 
     with st.container(border=True):
         col1, col2 = st.columns(2)
