@@ -4,6 +4,9 @@ import pandas as pd
 import statsmodels.api as sm
 import joblib
 from pathlib import Path
+import numpy as np
+import matplotlib.pyplot as plt
+import shap
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -28,11 +31,89 @@ model_freq, model_sev, discretizer = load_models()
 
 
 @st.cache_resource
+def get_dtype_template():
+    return pd.DataFrame(
+        {
+            "gender": pd.Series(dtype="object"),
+            "carType": pd.Series(dtype="object"),
+            "job": pd.Series(dtype="object"),
+            "cover": pd.Series(dtype="int64"),
+            "nYears": pd.Series(dtype="float64"),
+            "age": pd.Series(dtype="float64"),
+            "density": pd.Series(dtype="float64"),
+            "carVal": pd.Series(dtype="float64"),
+        }
+    )
+
+
+@st.cache_resource
 def load_risk_data():
     return pd.read_csv(str(BASE_DIR / "data" / "risk_summary.csv"))
 
 
+@st.cache_resource
+def load_profile_data():
+    return pd.read_csv(str(BASE_DIR / "data" / "tier_profile.csv"), index_col=0)
+
+
+@st.cache_resource
+def get_background_data():
+    df_train = pd.read_csv(str(BASE_DIR / "data" / "frequency2.csv"))
+    cols = ["gender", "carType", "cover", "job", "nYears", "age", "density", "carVal"]
+
+    return df_train[cols].sample(100, random_state=25)
+
+
+def generate_cost_shap(model_freq, model_sev, df_input):
+    feature_cols = [
+        "gender",
+        "carType",
+        "cover",
+        "job",
+        "nYears",
+        "age",
+        "density",
+        "carVal",
+    ]
+
+    background = get_background_data().copy()
+
+    background["gender"] = background["gender"].astype(str)
+    background["carType"] = background["carType"].astype(str)
+    background["job"] = background["job"].astype(str)
+
+    
+    def predict_cost(X):
+        template = get_dtype_template()
+
+        X_df = pd.DataFrame(X, columns=feature_cols)
+
+        # enforce structure
+        for col in template.columns:
+            X_df[col] = X_df[col].astype(template[col].dtype)
+
+        freq = model_freq.predict(X_df)
+        sev = model_sev.predict(X_df)
+
+        return (freq * sev).values
+
+    
+    explainer = shap.KernelExplainer(predict_cost, background.values)
+    shap_values = explainer.shap_values(df_input.values, nsamples=100)
+
+    explanation = shap.Explanation(
+        values=shap_values[0],
+        base_values=explainer.expected_value,
+        data=df_input.values[0],
+        feature_names=feature_cols,
+    )
+
+    return explanation
+
+
 risk_summary = load_risk_data()
+tier_profile = load_profile_data()
+
 
 risk_labels = {
     0.0: "Low Risk",
@@ -103,11 +184,11 @@ density = st.sidebar.number_input(
     step=10,
 )
 car_type = st.sidebar.selectbox("Car Type", ["A", "B", "C", "D", "E"])
-car_cat = st.sidebar.selectbox("Car Category", ["Small", "Medium", "Large"])
 car_val = st.sidebar.number_input(
     "Car Value (€)", min_value=500, max_value=50_000, value=10_000, step=1000
 )
 n_years = st.sidebar.slider("Years as Customer", 0, 15, 0)
+cover = int(st.sidebar.toggle("Cover", help="e.g. fire, theft, etc."))
 
 run = st.sidebar.button("Score Customer")
 
@@ -121,7 +202,7 @@ if run:
             {
                 "gender": gender,
                 "carType": car_type,
-                "carCat": car_cat,
+                "cover": cover,
                 "job": job,
                 "nYears": n_years,
                 "age": age,
@@ -206,6 +287,19 @@ if run:
     )
 
     st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("**SHAP (Expected Cost)** — freq × severity")
+    st.caption("Model-agnostic SHAP on the final cost prediction")
+
+    try:
+        exp_cost = generate_cost_shap(model_freq, model_sev, df_input)
+
+        shap.plots.waterfall(exp_cost, show=False)
+        st.pyplot(plt.gcf(), clear_figure=True)
+        plt.close()
+
+    except Exception as e:
+        st.error(f"Cost SHAP failed: {e}")
 
     with st.container(border=True):
         st.markdown(f"#### {risk_tier} Group Benchmarks")

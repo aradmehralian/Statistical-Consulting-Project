@@ -1,5 +1,5 @@
 risk_flag,customer_count,minimum_cost,maximum_cost,median_cost
-Low Risk,9387,50.31,320.27,227.14
-Medium Risk,8790,320.35,537.01,413.73
-High Risk,5029,537.13,825.68,642.0
-Extreme Risk,1547,825.83,1693.82,945.46
+Low Risk,9992,58.2,328.35,230.56
+Medium Risk,8763,328.38,555.45,424.87
+High Risk,4627,555.52,858.66,665.96
+Extreme Risk,1371,858.72,1775.9,986.32
