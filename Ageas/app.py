@@ -5,7 +5,6 @@ import statsmodels.api as sm
 import joblib
 from pathlib import Path
 import numpy as np
-import matplotlib.pyplot as plt
 import shap
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -61,7 +60,7 @@ def get_background_data():
     df_train = pd.read_csv(str(BASE_DIR / "data" / "frequency2.csv"))
     cols = ["gender", "carType", "cover", "job", "nYears", "age", "density", "carVal"]
 
-    return df_train[cols].sample(100, random_state=25)
+    return df_train[cols].sample(200, random_state=25)
 
 
 def generate_cost_shap(model_freq, model_sev, df_input):
@@ -82,7 +81,6 @@ def generate_cost_shap(model_freq, model_sev, df_input):
     background["carType"] = background["carType"].astype(str)
     background["job"] = background["job"].astype(str)
 
-    
     def predict_cost(X):
         template = get_dtype_template()
 
@@ -97,7 +95,6 @@ def generate_cost_shap(model_freq, model_sev, df_input):
 
         return (freq * sev).values
 
-    
     explainer = shap.KernelExplainer(predict_cost, background.values)
     shap_values = explainer.shap_values(df_input.values, nsamples=100)
 
@@ -109,6 +106,130 @@ def generate_cost_shap(model_freq, model_sev, df_input):
     )
 
     return explanation
+
+
+def plotly_shap_like_waterfall(explanation, title=""):
+    values = explanation.values
+    base = explanation.base_values
+    features = explanation.feature_names
+    data = explanation.data
+
+    order = np.argsort(np.abs(values))[::-1]
+    values = values[order]
+    features = [features[i] for i in order]
+    data = [data[i] for i in order]
+
+    # Build labels
+    variable_labels = {
+        "age": "Age",
+        "cover": "Cover",
+        "nYears": "Years as Customer",
+        "carVal": "Car Value",
+        "density": "Density",
+        "carType": "Car Type",
+        "job": "Job",
+        "gender": "Gender",
+    }
+
+    labels = [
+        (
+            f"{variable_labels[f]} = {"Yes" if v == 1 else "No"}"
+            if f == "cover"
+            else f"{variable_labels[f]} = {v}"
+        )
+        for f, v in zip(features, data)
+    ]
+
+    # Cumulative positions
+    x_start = base
+    xs = []
+    widths = []
+    colors = []
+    text = []
+
+    for val in values:
+        xs.append(x_start)
+        widths.append(val)
+        colors.append("#FF0051" if val >= 0 else "#1E88E5")
+        text.append(f"{val:+.2f}")
+        x_start += val
+
+    final_value = x_start
+
+    fig = go.Figure()
+
+    for i in range(len(values)):
+        fig.add_trace(
+            go.Bar(
+                x=[widths[i]],
+                y=[labels[i]],
+                base=xs[i],
+                orientation="h",
+                marker=dict(color=colors[i]),
+                text=[text[i]],
+                textposition="auto",
+                insidetextanchor="middle",
+                hovertemplate=f"{labels[i]}<br>{text[i]}<extra></extra>",
+                showlegend=False,
+            )
+        )
+
+    fig.add_vline(
+        x=base,
+        line=dict(color="gray", dash="dash"),
+        annotation_text=f"Global Average = {base:.2f}",
+        annotation_position="bottom left",
+        annotation_xshift=-5,
+    )
+
+    fig.add_vline(
+        x=final_value,
+        line=dict(color="gray", dash="dot"),
+        annotation_text=f"Expected Cost = {final_value:.2f}",
+        annotation_position="top right",
+        annotation_yanchor="bottom",
+    )
+
+    fig.update_layout(
+        title=title,
+        barmode="overlay",
+        height=400 + len(values) * 30,
+        margin=dict(l=20, r=20, t=40, b=20),
+        xaxis_title="Expected Cost (€)",
+        yaxis=dict(autorange="reversed"),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=None),
+        template="plotly_dark" if _is_dark_mode() else "plotly_white",
+    )
+
+    return fig
+
+
+def _is_dark_mode():
+    try:
+        from IPython.display import display, Javascript
+        import threading
+
+        result = {}
+        done = threading.Event()
+
+        def _callback(data):
+            result["dark"] = data
+            done.set()
+
+        js = Javascript("""
+            const bg = getComputedStyle(document.body).backgroundColor;
+            const m = bg.match(/\d+/g);
+            const lum = m ? (0.299*m[0] + 0.587*m[1] + 0.114*m[2]) / 255 : 1;
+            IPython.notebook.kernel.execute(
+                `_dark_mode_result = ${lum < 0.5}`
+            );
+        """)
+        display(js)
+        return False
+    except Exception:
+        return False
 
 
 risk_summary = load_risk_data()
@@ -172,7 +293,7 @@ risk_visuals = {
 # side bar for entering customer info
 st.sidebar.header("Customer Info")
 gender = st.sidebar.selectbox("Gender", ["Male", "Female"])
-age = st.sidebar.slider("Age", 18, 99, 30)
+age = st.sidebar.slider("Age", 18, 80, 30)
 job = st.sidebar.selectbox(
     "Employment", ["Employed", "Unemployed", "Self-employed", "Retired", "Housewife"]
 )
@@ -288,18 +409,16 @@ if run:
 
     st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("**SHAP (Expected Cost)** — freq × severity")
-    st.caption("Model-agnostic SHAP on the final cost prediction")
+    with st.expander("SHAP Explanation (Expected Cost)", expanded=False):
+        with st.spinner("Computing SHAP values..."):
+            try:
+                exp_cost = generate_cost_shap(model_freq, model_sev, df_input)
 
-    try:
-        exp_cost = generate_cost_shap(model_freq, model_sev, df_input)
+                fig = plotly_shap_like_waterfall(exp_cost)
+                st.plotly_chart(fig, use_container_width=True)
 
-        shap.plots.waterfall(exp_cost, show=False)
-        st.pyplot(plt.gcf(), clear_figure=True)
-        plt.close()
-
-    except Exception as e:
-        st.error(f"Cost SHAP failed: {e}")
+            except Exception as e:
+                st.error(f"Cost SHAP failed: {e}")
 
     with st.container(border=True):
         st.markdown(f"#### {risk_tier} Group Benchmarks")
