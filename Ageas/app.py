@@ -243,45 +243,6 @@ risk_labels = {
     3.0: "Extreme Risk",
 }
 
-profiles = {
-    0.0: {
-        "title": "The Rural Veteran",
-        "gender": "Male",
-        "age": "~46",
-        "density": "69",
-        "status": "Employed",
-        "car": "Large Car",
-        "icon": "🚜",
-    },
-    1.0: {
-        "title": "The Suburban Professional",
-        "gender": "Male",
-        "age": "~29",
-        "density": "140",
-        "status": "Employed",
-        "car": "Medium Car",
-        "icon": "🏢",
-    },
-    2.0: {
-        "title": "The Young Urbanite",
-        "gender": "Male",
-        "age": "~23",
-        "density": "225",
-        "status": "Unemployed",
-        "car": "Small Car",
-        "icon": "🌆",
-    },
-    3.0: {
-        "title": "The Metropolitan Novice",
-        "gender": "Male",
-        "age": "~22",
-        "density": "249",
-        "status": "Unemployed",
-        "car": "Small Car",
-        "icon": "🏎️",
-    },
-}
-
 risk_visuals = {
     "Low Risk": {"score": 30, "color": "#34d399"},
     "Medium Risk": {"score": 60, "color": "#fbbf24"},
@@ -342,7 +303,6 @@ if run:
     )[0][0]
 
     risk_tier = risk_labels[risk_bin]
-    profile = profiles[risk_bin]
 
     visuals = risk_visuals.get(risk_tier, {"score": 0, "color": "#cccccc"})
     score = visuals["score"]
@@ -429,25 +389,6 @@ if run:
         b2.metric("Median Cost", f"€{tier_median:,.2f}")
         b3.metric("Maximum Cost", f"€{tier_max:,.2f}")
 
-    st.divider()
-
-    st.markdown(f"### {profile["title"]}")
-
-    with st.container(border=True):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.caption("DEMOGRAPHICS")
-            st.write(f"**Age:** {profile["age"]} years")
-            st.write(f"**Gender:** {profile["gender"]}")
-            st.write(f"**Status:** {profile["status"]}")
-
-        with col2:
-            st.caption("ENVIRONMENT & ASSETS")
-            st.write(f"**Density:** {profile['density']} inh/km²")
-            st.write(f"**Vehicle:** {profile["car"]}")
-
-        st.info("This profile represents the statistical average for this risk tier.")
 
 else:
     st.info(
