@@ -6,6 +6,8 @@ import joblib
 from pathlib import Path
 import numpy as np
 import shap
+from IPython.display import display, Javascript
+import threading
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -57,7 +59,7 @@ def load_profile_data():
 
 @st.cache_resource
 def get_background_data():
-    df_train = pd.read_csv(str(BASE_DIR / "data" / "frequency2.csv"))
+    df_train = pd.read_csv(str(BASE_DIR / "data" / "combined_data.csv"))
     cols = ["gender", "carType", "cover", "job", "nYears", "age", "density", "carVal"]
 
     return df_train[cols].sample(200, random_state=25)
@@ -86,7 +88,6 @@ def generate_cost_shap(model_freq, model_sev, df_input):
 
         X_df = pd.DataFrame(X, columns=feature_cols)
 
-        # enforce structure
         for col in template.columns:
             X_df[col] = X_df[col].astype(template[col].dtype)
 
@@ -208,9 +209,6 @@ def plotly_shap_like_waterfall(explanation, title=""):
 
 def _is_dark_mode():
     try:
-        from IPython.display import display, Javascript
-        import threading
-
         result = {}
         done = threading.Event()
 
@@ -321,7 +319,7 @@ if run:
 
     m1, m2, m3 = st.columns(3)
     m1.metric("Claim Frequency", f"{freq:.4f}", help="Expected claims per year")
-    m2.metric("Claim Severity", f"€{sev:,.0f}", help="Average cost per claim")
+    m2.metric("Claim Severity", f"€{sev:,.0f}", help="Expected cost per claim")
     m3.metric("Expected Annual Cost", f"€{expected_cost:,.2f}")
 
     st.divider()
